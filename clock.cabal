@@ -17,6 +17,8 @@ library
                        Clock.LED
                        Clock.Blink
                        Clock.Types
+                       Clock.Fonts
+                       Clock.SSD1306
                        --Clock.CANSendRecv
                        --Clock.CAN2UART
                        --Hello.App
