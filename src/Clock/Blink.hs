@@ -71,11 +71,6 @@ blink per pins = do
   onoff <- blinker per
   monitor "led" $ ledController pins onoff
 
-
-
-
-
-
 stringArray :: String -> [Uint8]
 stringArray = map (fromIntegral . ord)
 
@@ -109,7 +104,7 @@ app tocc toleds toi2c touart = do
   monitor "dma" mon
 
 
-  (putpixel_ch, ssd_ready, putch_ch) <- ssd1306Tower i2cRequest i2cReady ostream ssd1306_i2c_addr
+  (putpixel_ch, ssd_ready, putch_ch, blit_ch) <- ssd1306Tower i2cRequest i2cReady ostream ssd1306_i2c_addr
   per <- period (Milliseconds 300)
   monitor "putpixelmon" $ do
     go <- stateInit "go_state" $ ival false
@@ -122,6 +117,7 @@ app tocc toleds toi2c touart = do
 
     handler per "putpixelmon_handler" $ do
       pp_e <- emitter putpixel_ch 32
+      blit_e <- emitter blit_ch 16
       callback $ \timeref -> do
         go_d <- deref go
         time_d <- deref timeref
@@ -133,19 +129,20 @@ app tocc toleds toi2c touart = do
             time :: Uint64
             time  = signCast $ toIMicroseconds time_d
   --        store (p ~> x) $ (bitCast :: Uint64 -> Uint8) $ castDefault $ 30.0 .+30.0 .*(sin :: IDouble -> IDouble) $ safeCast time
-          store (p ~> x) $ (counter_d * 7) .% 128
-          store (p ~> y) $ (counter_d) .% 64
-          store (p ~> pixel_c) 1
+          store (p ~> x) $ (counter_d * 2) .% 128
+          store (p ~> y) $ (counter_d * 3) .% 64
+          store (p ~> pixel_c) 0
           emit pp_e $ constRef p
           --store (p ~> x) $ (bitCast :: Uint64 -> Uint8) $ safeCast (time ./ 3000)
           --store (p ~> y) $ bitCast $ (time ./ 13000)
   --        p <- local $ istruct [ x .= ival $ time .% 128
   --                             , y .= ival $ time .% 64 ]
-          --p <- local $ istruct []
-          --store (p ~> x) $ ((counter_d+2) * 7) .% 128
-          --store (p ~> y) $ ((counter_d+2)) .% 64
-          --store (p ~> c) 1
-          --emit pp_e $ constRef p
+          p <- local $ istruct []
+          store (p ~> x) $ ((counter_d+3) * 2) .% 128
+          store (p ~> y) $ ((counter_d+3) * 3) .% 64
+          store (p ~> pixel_c) 1
+          emit pp_e $ constRef p
+          emitV blit_e  true
   return ()
 
   --tasks <- forM exti2cs $ \ExternalSensor{..} -> do

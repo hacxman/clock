@@ -31,20 +31,26 @@ putc :: (GetAlloc eff ~ 'Scope cs)
 putc = emitV
 
 
-ssd1306Tower :: BackpressureTransmit ('Struct "i2c_transaction_request") ('Struct "i2c_transaction_result")
-                      -> ChanOutput ('Stored ITime)
---                      -> ChanInput  ('Struct "magnetometer_sample")
-                      -> ChanInput  ('Stored Uint8)
-                      -> I2CDeviceAddr
-                      -> Tower e (ChanInput ('Struct "pixel"), (ChanOutput ('Stored IBool)), ChanInput ('Stored Uint8))
+ssd1306Tower :: BackpressureTransmit ('Struct "i2c_transaction_request")
+                                     ('Struct "i2c_transaction_result")
+             -> ChanOutput ('Stored ITime)
+             -> ChanInput  ('Stored Uint8)
+             -> I2CDeviceAddr
+             -> Tower e ( ChanInput ('Struct "pixel")
+                        , ChanOutput ('Stored IBool)
+                        , ChanInput ('Stored Uint8)
+                        , ChanInput ('Stored IBool))
 ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan ostream addr = do
   putpixel_chan <- channel
   blit_chan <- channel
   ready_chan <- channel
   putch_chan <- channel
   monitor "ssd1306mon" $ do
-    (framebuffer :: Ref 'Global ('Array 1024 ('Stored Uint8))) <- stateInit "framebuffer" (iarray [ival (0 :: Uint8) | _ <- [0..1024]])
-    (font_mem :: Ref 'Global ('Array 1275 ('Stored Uint8))) <- stateInit "fontmem" $ iarray $ fmap ival font
+    (framebuffer :: Ref 'Global ('Array 1024 ('Stored Uint8)))
+      <- stateInit "framebuffer" (iarray [ival (0 :: Uint8) | _ <- [0..1024]])
+
+    (font_mem :: Ref 'Global ('Array 1275 ('Stored Uint8)))
+      <- stateInit "fontmem" $ iarray $ fmap ival font
 
     blit_state <- stateInit "blit_state" $ ival false
 
@@ -67,8 +73,6 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan ostream addr = d
         when (color ==? 0) $ do
           let newpix = current_pix .& (iComplement (1 `iShiftL` (xpos .% 8)))
           store (framebuffer ! (toIx index)) newpix
-        --store (framebuffer ! (10)) newpix
-        emitV blit_e true
 
     text_pos <- stateInit "text_pos" $ ival (0 :: Sint32)
     handler (snd putch_chan) "ssd1306_putch" $ do
@@ -99,16 +103,10 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan ostream addr = d
       req_e <- emitter req_chan 1
       ready_e <- emitter (fst ready_chan) 1
       return $ CoroutineBody $ \ yield -> do
-        --r <- i2c_req addr DISPLAY_OFF
-        --emit req_e r
-        --_ <- yield
-        --return ()
         let em d = i2c_req addr d >>= emit req_e >> yield in do
           em DISPLAY_OFF
           -- TODO: FIXME: display goes wrong with this line
 --          em $ SET_DISPLAY_CLOCK_DIV 0x80
-          --em $ SET_MULTIPLEX 0x1f
-          --em $ SET_COM_PINS 0x02
           em $ SET_MULTIPLEX 0x3f
           em $ SET_COM_PINS 0x12
           em $ SET_DISPLAY_OFFSET 0
@@ -124,8 +122,10 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan ostream addr = d
           em NORMAL_DISPLAY
           em DISPLAY_ON
           em DEACTIVATE_SCROLL
+
           ssd_clear req_e addr yield
           emitV ready_e true
+
           forever $ do
             blit_st <- deref blit_state
             when (blit_st) $ do
@@ -141,7 +141,7 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan ostream addr = d
             yield
             return ()
           return ()
-  return (fst putpixel_chan, snd ready_chan, fst putch_chan)
+  return (fst putpixel_chan, snd ready_chan, fst putch_chan, fst blit_chan)
 
 
 ssd_clear req_e addr yield = do
@@ -164,13 +164,14 @@ i2c_read_1 addr = fmap constRef $ local $ istruct
 
 i2c_data_1 addr dat = fmap constRef $ local $ istruct
                     [ tx_addr .= ival addr
-                      , tx_buf  .= iarray [ival 0x40, ival dat] --([ival 0x40] ++ [ival 0 | _ <- [0..8*12]]) --, ival dat, ival dat, ival dat]
+                    , tx_buf  .= iarray [ival 0x40, ival dat]
                     , tx_len  .= ival (1+1)
                     , rx_len  .= ival 0
                     ]
 
 ssd1306_i2c_addr :: I2CDeviceAddr
 ssd1306_i2c_addr = I2CDeviceAddr 0x3c
+
 data SSD1306Cmd = EXTERNAL_VCC
                 | SWITCH_CAP_VCC
                 | SET_LOW_COLUMN
@@ -245,11 +246,6 @@ ssd1306cmd_toint (SET_DISPLAY_CLOCK_DIV x) = 0xD5
 ssd1306cmd_toint (SET_PRECHARGE      x)= 0xD9
 ssd1306cmd_toint (SET_MULTIPLEX      x)= 0xA8
 
---MEMORY_MODE_HORIZ = 0x00
---MEMORY_MODE_VERT  = 0x01
---MEMORY_MODE_PAGE  = 0x02
-
-
 i2c_req :: (GetAlloc eff ~ 'Scope s)
         => I2CDeviceAddr
         -> SSD1306Cmd
@@ -270,28 +266,30 @@ i2c_req addr cmd = i2c_req_0 addr cmd
 
 i2c_req_i addr cmd = fmap constRef $ local $ istruct
                     [ tx_addr .= ival addr
-                      , tx_buf  .= iarray [ival 0x00, ival cmd ]
+                    , tx_buf  .= iarray [ival 0x00, ival cmd ]
                     , tx_len  .= ival 2
                     , rx_len  .= ival 0
                     ]
 
 i2c_req_0 addr cmd = fmap constRef $ local $ istruct
                     [ tx_addr .= ival addr
-                      , tx_buf  .= iarray [ival 0x00, ival $ ssd1306cmd_toint cmd ]
+                    , tx_buf  .= iarray [ival 0x00, ival $ ssd1306cmd_toint cmd ]
                     , tx_len  .= ival 2
                     , rx_len  .= ival 0
                     ]
 
 i2c_req_1 addr cmd dat = fmap constRef $ local $ istruct
                     [ tx_addr .= ival addr
-                      , tx_buf  .= iarray [ival 0x00, ival $ ssd1306cmd_toint cmd, ival dat ]
+                    , tx_buf  .= iarray [ival 0x00, ival $ ssd1306cmd_toint cmd
+                                        , ival dat ]
                     , tx_len  .= ival 3
                     , rx_len  .= ival 0
                     ]
 
 i2c_req_2 addr cmd dat1 dat2 = fmap constRef $ local $ istruct
                     [ tx_addr .= ival addr
-                      , tx_buf  .= iarray [ival 0x00, ival $ ssd1306cmd_toint cmd, ival dat1, ival dat2 ]
+                    , tx_buf  .= iarray [ival 0x00, ival $ ssd1306cmd_toint cmd
+                                        , ival dat1, ival dat2 ]
                     , tx_len  .= ival 4
                     , rx_len  .= ival 0
                     ]
