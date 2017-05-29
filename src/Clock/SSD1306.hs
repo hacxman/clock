@@ -22,6 +22,82 @@ import Ivory.Stdlib
 
 import Clock.Types
 
+ssd1306_i2c_addr :: I2CDeviceAddr
+ssd1306_i2c_addr = I2CDeviceAddr 0x3c
+
+data SSD1306Cmd = EXTERNAL_VCC
+                | SWITCH_CAP_VCC
+                | SET_LOW_COLUMN
+                | SET_HIGH_COLUMN
+                | SET_MEMORY_MODE Uint8
+                | SET_COL_ADDRESS Uint8 Uint8
+                | SET_PAGE_ADDRESS Uint8 Uint8
+                | RIGHT_HORIZ_SCROLL
+                | LEFT_HORIZ_SCROLL
+                | VERT_AND_RIGHT_HORIZ_SCROLL
+                | VERT_AND_LEFT_HORIZ_SCROLL
+                | DEACTIVATE_SCROLL
+                | ACTIVATE_SCROLL
+                | SET_START_LINE Uint8
+                | SET_CONTRAST Uint8
+                | CHARGE_PUMP Uint8
+                | SEG_REMAP Uint8
+                | SET_VERT_SCROLL_AREA
+                | DISPLAY_ALL_ON_RESUME
+                | DISPLAY_ALL_ON
+                | NORMAL_DISPLAY
+                | INVERT_DISPLAY
+                | DISPLAY_OFF
+                | DISPLAY_ON
+                | COM_SCAN_INC
+                | COM_SCAN_DEC
+                | SET_DISPLAY_OFFSET Uint8
+                | SET_COM_PINS Uint8
+                | SET_VCOM_DETECT Uint8
+                | SET_DISPLAY_CLOCK_DIV Uint8
+                | SET_PRECHARGE Uint8
+                | SET_MULTIPLEX Uint8
+
+--MEMORY_MODE_HORIZ = 0x00
+--MEMORY_MODE_VERT  = 0x01
+--MEMORY_MODE_PAGE  = 0x02
+
+ssd1306cmd_toint :: SSD1306Cmd -> Uint8
+ssd1306cmd_toint EXTERNAL_VCC   = 0x1
+ssd1306cmd_toint SWITCH_CAP_VCC = 0x2
+
+ssd1306cmd_toint SET_LOW_COLUMN        = 0x00
+ssd1306cmd_toint SET_HIGH_COLUMN       = 0x10
+ssd1306cmd_toint (SET_MEMORY_MODE    x)= 0x20
+ssd1306cmd_toint (SET_COL_ADDRESS    x y)   = 0x21
+ssd1306cmd_toint (SET_PAGE_ADDRESS   x y)   = 0x22
+ssd1306cmd_toint RIGHT_HORIZ_SCROLL    = 0x26
+ssd1306cmd_toint LEFT_HORIZ_SCROLL     = 0x27
+ssd1306cmd_toint VERT_AND_RIGHT_HORIZ_SCROLL = 0x29
+ssd1306cmd_toint VERT_AND_LEFT_HORIZ_SCROLL = 0x2A
+ssd1306cmd_toint DEACTIVATE_SCROLL     = 0x2E
+ssd1306cmd_toint ACTIVATE_SCROLL       = 0x2F
+ssd1306cmd_toint (SET_START_LINE    x) = 0x40
+ssd1306cmd_toint (SET_CONTRAST      x) = 0x81
+ssd1306cmd_toint (CHARGE_PUMP       x) = 0x8D
+ssd1306cmd_toint (SEG_REMAP         x) = 0xA0
+ssd1306cmd_toint SET_VERT_SCROLL_AREA  = 0xA3
+ssd1306cmd_toint DISPLAY_ALL_ON_RESUME = 0xA4
+ssd1306cmd_toint DISPLAY_ALL_ON        = 0xA5
+ssd1306cmd_toint NORMAL_DISPLAY        = 0xA6
+ssd1306cmd_toint INVERT_DISPLAY        = 0xA7
+ssd1306cmd_toint DISPLAY_OFF           = 0xAE
+ssd1306cmd_toint DISPLAY_ON            = 0xAF
+ssd1306cmd_toint COM_SCAN_INC          = 0xC0
+ssd1306cmd_toint COM_SCAN_DEC          = 0xC8
+ssd1306cmd_toint (SET_DISPLAY_OFFSET x)= 0xD3
+ssd1306cmd_toint (SET_COM_PINS       x)= 0xDA
+ssd1306cmd_toint (SET_VCOM_DETECT    x)= 0xDB
+ssd1306cmd_toint (SET_DISPLAY_CLOCK_DIV x) = 0xD5
+ssd1306cmd_toint (SET_PRECHARGE      x)= 0xD9
+ssd1306cmd_toint (SET_MULTIPLEX      x)= 0xA8
+
+
 puts :: (GetAlloc eff ~ 'Scope cs)
      => Emitter ('Stored Uint8) -> String -> Ivory eff ()
 puts e str = mapM_ (\c -> putc e (fromIntegral (ord c))) str
@@ -150,6 +226,10 @@ ssd_clear req_e addr yield = do
 
     return ()
 
+-----------------------------
+-- I2C stuff
+-----------------------------
+
 i2c_read_1 addr = fmap constRef $ local $ istruct
                 [ tx_addr .= ival addr
                 , tx_buf .= iarray []
@@ -163,84 +243,6 @@ i2c_data_1 addr dat = fmap constRef $ local $ istruct
                     , tx_len  .= ival (1+1)
                     , rx_len  .= ival 0
                     ]
-
-ssd1306_i2c_addr :: I2CDeviceAddr
-ssd1306_i2c_addr = I2CDeviceAddr 0x3c
-
-data SSD1306Cmd = EXTERNAL_VCC
-                | SWITCH_CAP_VCC
-                | SET_LOW_COLUMN
-                | SET_HIGH_COLUMN
-                | SET_MEMORY_MODE Uint8
-                | SET_COL_ADDRESS Uint8 Uint8
-                | SET_PAGE_ADDRESS Uint8 Uint8
-                | RIGHT_HORIZ_SCROLL
-                | LEFT_HORIZ_SCROLL
-                | VERT_AND_RIGHT_HORIZ_SCROLL
-                | VERT_AND_LEFT_HORIZ_SCROLL
-                | DEACTIVATE_SCROLL
-                | ACTIVATE_SCROLL
-                | SET_START_LINE Uint8
-                | SET_CONTRAST Uint8
-                | CHARGE_PUMP Uint8
-                | SEG_REMAP Uint8
-                | SET_VERT_SCROLL_AREA
-                | DISPLAY_ALL_ON_RESUME
-                | DISPLAY_ALL_ON
-                | NORMAL_DISPLAY
-                | INVERT_DISPLAY
-                | DISPLAY_OFF
-                | DISPLAY_ON
-                | COM_SCAN_INC
-                | COM_SCAN_DEC
-                | SET_DISPLAY_OFFSET Uint8
-                | SET_COM_PINS Uint8
-                | SET_VCOM_DETECT Uint8
-                | SET_DISPLAY_CLOCK_DIV Uint8
-                | SET_PRECHARGE Uint8
-                | SET_MULTIPLEX Uint8
-
---MEMORY_MODE_HORIZ = 0x00
---MEMORY_MODE_VERT  = 0x01
---MEMORY_MODE_PAGE  = 0x02
-
-
-
-ssd1306cmd_toint :: SSD1306Cmd -> Uint8
-ssd1306cmd_toint EXTERNAL_VCC   = 0x1
-ssd1306cmd_toint SWITCH_CAP_VCC = 0x2
-
-ssd1306cmd_toint SET_LOW_COLUMN        = 0x00
-ssd1306cmd_toint SET_HIGH_COLUMN       = 0x10
-ssd1306cmd_toint (SET_MEMORY_MODE    x)= 0x20
-ssd1306cmd_toint (SET_COL_ADDRESS    x y)   = 0x21
-ssd1306cmd_toint (SET_PAGE_ADDRESS   x y)   = 0x22
-ssd1306cmd_toint RIGHT_HORIZ_SCROLL    = 0x26
-ssd1306cmd_toint LEFT_HORIZ_SCROLL     = 0x27
-ssd1306cmd_toint VERT_AND_RIGHT_HORIZ_SCROLL = 0x29
-ssd1306cmd_toint VERT_AND_LEFT_HORIZ_SCROLL = 0x2A
-ssd1306cmd_toint DEACTIVATE_SCROLL     = 0x2E
-ssd1306cmd_toint ACTIVATE_SCROLL       = 0x2F
-ssd1306cmd_toint (SET_START_LINE    x) = 0x40
-ssd1306cmd_toint (SET_CONTRAST      x) = 0x81
-ssd1306cmd_toint (CHARGE_PUMP       x) = 0x8D
-ssd1306cmd_toint (SEG_REMAP         x) = 0xA0
-ssd1306cmd_toint SET_VERT_SCROLL_AREA  = 0xA3
-ssd1306cmd_toint DISPLAY_ALL_ON_RESUME = 0xA4
-ssd1306cmd_toint DISPLAY_ALL_ON        = 0xA5
-ssd1306cmd_toint NORMAL_DISPLAY        = 0xA6
-ssd1306cmd_toint INVERT_DISPLAY        = 0xA7
-ssd1306cmd_toint DISPLAY_OFF           = 0xAE
-ssd1306cmd_toint DISPLAY_ON            = 0xAF
-ssd1306cmd_toint COM_SCAN_INC          = 0xC0
-ssd1306cmd_toint COM_SCAN_DEC          = 0xC8
-ssd1306cmd_toint (SET_DISPLAY_OFFSET x)= 0xD3
-ssd1306cmd_toint (SET_COM_PINS       x)= 0xDA
-ssd1306cmd_toint (SET_VCOM_DETECT    x)= 0xDB
-ssd1306cmd_toint (SET_DISPLAY_CLOCK_DIV x) = 0xD5
-ssd1306cmd_toint (SET_PRECHARGE      x)= 0xD9
-ssd1306cmd_toint (SET_MULTIPLEX      x)= 0xA8
-
 i2c_req :: (GetAlloc eff ~ 'Scope s)
         => I2CDeviceAddr
         -> SSD1306Cmd
