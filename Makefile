@@ -3,10 +3,8 @@
 TARGET ?= /dev/ttyACM0
 IVORYFLAGS ?= --const-fold --verbose
 TESTS      := \
-	cansendrecv-test \
-	can2uart-test \
-	led-test \
-	blink-test
+	blink-test \
+	oled-test
 
 AADL_TESTS := 
 CLEANS     := $(foreach test,$(TESTS),$(test)-clean) \
