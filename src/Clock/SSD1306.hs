@@ -34,13 +34,12 @@ putc = emitV
 ssd1306Tower :: BackpressureTransmit ('Struct "i2c_transaction_request")
                                      ('Struct "i2c_transaction_result")
              -> ChanOutput ('Stored ITime)
-             -> ChanInput  ('Stored Uint8)
              -> I2CDeviceAddr
              -> Tower e ( ChanInput ('Struct "pixel")
                         , ChanOutput ('Stored IBool)
                         , ChanInput ('Stored Uint8)
                         , ChanInput ('Stored IBool))
-ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan ostream addr = do
+ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan addr = do
   putpixel_chan <- channel
   blit_chan <- channel
   ready_chan <- channel
@@ -55,7 +54,6 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan ostream addr = d
     blit_state <- stateInit "blit_state" $ ival false
 
     handler (snd putpixel_chan) "ssd1306_putpixel" $ do
-      o <- emitter ostream 32
       req_e <- emitter req_chan 1
       blit_e <- emitter (fst blit_chan) 1
       callback $ \p -> do
@@ -76,7 +74,6 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan ostream addr = d
 
     text_pos <- stateInit "text_pos" $ ival (0 :: Sint32)
     handler (snd putch_chan) "ssd1306_putch" $ do
-      o <- emitter ostream 32
       req_e <- emitter req_chan 1
       blit_e <- emitter (fst blit_chan) 1
       callbackV $ \ch -> do
@@ -91,7 +88,6 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan ostream addr = d
 
 
     handler (snd blit_chan) "blit" $ do
-      o <- emitter ostream 32
       req_e <- emitter req_chan 1
       callback $ const $ do
         store blit_state true
@@ -99,7 +95,6 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan ostream addr = d
 
 
     coroutineHandler init_chan res_chan "ssd1306" $ do
-      o <- emitter ostream 32
       req_e <- emitter req_chan 1
       ready_e <- emitter (fst ready_chan) 1
       return $ CoroutineBody $ \ yield -> do
