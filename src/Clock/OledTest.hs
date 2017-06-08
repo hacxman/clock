@@ -45,8 +45,9 @@ app tocc toi2c = do
 
   (i2cRequest, i2cReady) <- i2cTower tocc (testI2C i2c) (testI2CPins i2c)
 
-  (putpixel_ch, ssd_ready, putch_ch, blit_ch) <- ssd1306Tower i2cRequest i2cReady ssd1306_i2c_addr
+  chs@(OledChannels putpixel_ch ssd_ready putch_ch blit_ch clr_ch) <- ssd1306Tower i2cRequest i2cReady ssd1306_i2c_addr
   per <- period (Milliseconds 300)
+  per_clr <- period (Milliseconds 3000)
   monitor "putpixelmon" $ do
     go <- stateInit "go_state" $ ival false
     counter <- stateInit "counter" $ ival (0 :: Uint8)
@@ -56,9 +57,15 @@ app tocc toi2c = do
         store go true
         mapM_ (emitV putch_e) $stringArray "zec mi pec"
 
+    handler per_clr "clr_handler" $ do
+      clr_e <- emitter clr_ch 1
+      callback $ \timeref -> do
+        emitV clr_e true
+
     handler per "putpixelmon_handler" $ do
       pp_e <- emitter putpixel_ch 32
       blit_e <- emitter blit_ch 16
+      chs_e <- oledEmitter chs
       callback $ \timeref -> do
         go_d <- deref go
         time_d <- deref timeref
@@ -79,5 +86,6 @@ app tocc toi2c = do
           store (p ~> y) $ ((counter_d+3) * 3) .% 64
           store (p ~> pixel_c) 1
           emit pp_e $ constRef p
+          --oled_putpixel chs_e 10 20 1
           emitV blit_e  true
   return ()

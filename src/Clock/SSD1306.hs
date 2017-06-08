@@ -3,27 +3,67 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PolyKinds #-}
 
 module Clock.SSD1306 where
 
 import Ivory.Language
 import Ivory.Tower
-import Ivory.HW.Module
+--import Ivory.HW.Module
 
 import Ivory.Tower.HAL.Bus.Interface
 import Ivory.BSP.STM32.Driver.I2C
-import Ivory.BSP.STM32.Peripheral.I2C (i2cName)
+--import Ivory.BSP.STM32.Peripheral.I2C (i2cName)
 import Clock.Fonts
-import Data.Bits ((.|.))
+--import Data.Bits ((.|.))
 import Data.Char (ord)
-import BSP.Tests.UART.Buffer
-import BSP.Tests.UART.Types
+--import BSP.Tests.UART.Buffer
+--import BSP.Tests.UART.Types
 import Ivory.Stdlib
+import Ivory.Language.Uint
+import Ivory.Language.Effects
+import Ivory.Language.Monad
 
 import Clock.Types
 
 ssd1306_i2c_addr :: I2CDeviceAddr
 ssd1306_i2c_addr = I2CDeviceAddr 0x3c
+
+data OledChannels = OledChannels (ChanInput ('Struct "pixel"))
+                         (ChanOutput ('Stored IBool))
+                         (ChanInput ('Stored Uint8))
+                         (ChanInput ('Stored IBool))
+                         (ChanInput ('Stored IBool))
+
+data OledEmitters = OledEmitters
+             ((Emitter ('Struct "pixel")))
+             ((Emitter ('Stored Uint8)))
+             ((Emitter ('Stored IBool)))
+             ((Emitter ('Stored IBool)))
+oledEmitter :: OledChannels -> Handler b e OledEmitters
+oledEmitter (OledChannels a b c d e) = do
+  putpixel_e <- Ivory.Tower.emitter a 1
+  putchar_e <- Ivory.Tower.emitter c 1
+  blit_e <- Ivory.Tower.emitter d 1
+  clr_e <- Ivory.Tower.emitter e 1
+  return $ OledEmitters putpixel_e putchar_e blit_e clr_e
+
+oled_putpixel
+  :: forall s1 (s2 :: s) s3 (eff :: Ivory.Language.Effects.Effects).
+     Ivory.Language.Effects.GetAlloc eff
+     ~
+     'Ivory.Language.Effects.Scope s2 =>
+     OledEmitters
+     -> Ivory.Language.Uint.Uint8
+     -> Ivory.Language.Uint.Uint8
+     -> Ivory.Language.Uint.Uint8
+     -> Ivory.Language.Monad.Ivory eff ()
+oled_putpixel (OledEmitters e _ _ _) xx yy cc = do
+  p <- local $ istruct []
+  store (p ~> x) $ xx .% 128
+  store (p ~> y) $ yy .% 64
+  store (p ~> pixel_c) cc
+  Ivory.Tower.emit e $ constRef p
 
 data SSD1306Cmd = EXTERNAL_VCC
                 | SWITCH_CAP_VCC
@@ -98,28 +138,26 @@ ssd1306cmd_toint (SET_PRECHARGE      x)= 0xD9
 ssd1306cmd_toint (SET_MULTIPLEX      x)= 0xA8
 
 
-puts :: (GetAlloc eff ~ 'Scope cs)
-     => Emitter ('Stored Uint8) -> String -> Ivory eff ()
-puts e str = mapM_ (\c -> putc e (fromIntegral (ord c))) str
-
-putc :: (GetAlloc eff ~ 'Scope cs)
-     => Emitter ('Stored Uint8) -> Uint8 -> Ivory eff ()
-putc = emitV
+--puts :: (GetAlloc eff ~ 'Scope cs)
+--     => Emitter ('Stored Uint8) -> String -> Ivory eff ()
+--puts e str = mapM_ (\c -> putc e (fromIntegral (ord c))) str
+--
+--putc :: (GetAlloc eff ~ 'Scope cs)
+--     => Emitter ('Stored Uint8) -> Uint8 -> Ivory eff ()
+--putc = Ivory.Tower.emitV
 
 
 ssd1306Tower :: BackpressureTransmit ('Struct "i2c_transaction_request")
                                      ('Struct "i2c_transaction_result")
              -> ChanOutput ('Stored ITime)
              -> I2CDeviceAddr
-             -> Tower e ( ChanInput ('Struct "pixel")
-                        , ChanOutput ('Stored IBool)
-                        , ChanInput ('Stored Uint8)
-                        , ChanInput ('Stored IBool))
+             -> Tower e OledChannels
 ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan addr = do
   putpixel_chan <- channel
   blit_chan <- channel
   ready_chan <- channel
   putch_chan <- channel
+  clr_chan <- channel
   monitor "ssd1306mon" $ do
     (framebuffer :: Ref 'Global ('Array 1024 ('Stored Uint8)))
       <- stateInit "framebuffer" (iarray [ival (0 :: Uint8) | _ <- [0..1024]])
@@ -130,8 +168,8 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan addr = do
     blit_state <- stateInit "blit_state" $ ival false
 
     handler (snd putpixel_chan) "ssd1306_putpixel" $ do
-      req_e <- emitter req_chan 1
-      blit_e <- emitter (fst blit_chan) 1
+      req_e <- Ivory.Tower.emitter req_chan 1
+      blit_e <- Ivory.Tower.emitter (fst blit_chan) 1
       callback $ \p -> do
         xpos <- p ~>* x
         ypos <- p ~>* y
@@ -150,8 +188,8 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan addr = do
 
     text_pos <- stateInit "text_pos" $ ival (0 :: Sint32)
     handler (snd putch_chan) "ssd1306_putch" $ do
-      req_e <- emitter req_chan 1
-      blit_e <- emitter (fst blit_chan) 1
+      req_e <- Ivory.Tower.emitter req_chan 1
+      blit_e <- Ivory.Tower.emitter (fst blit_chan) 1
       callbackV $ \ch -> do
         text_pos_d <- deref text_pos
         arrayMap $ \(i :: Ix 5) -> do
@@ -159,22 +197,28 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan addr = do
                       + ((bitCast :: Uint32 -> Uint32) $ signCast $ fromIx i)))
           oc <- deref (framebuffer ! (toIx (8*(text_pos_d*6+(fromIx i)))))
           store (framebuffer ! (toIx (8*(text_pos_d*6+(fromIx i))))) (oc .| c)
-        emitV blit_e true
+        Ivory.Tower.emitV blit_e true
         text_pos %= (+1)
 
 
     handler (snd blit_chan) "blit" $ do
-      req_e <- emitter req_chan 1
+      req_e <- Ivory.Tower.emitter req_chan 1
       callback $ const $ do
         store blit_state true
-        i2c_req_i addr 0 >>= emit req_e
+        i2c_req_i addr 0 >>= Ivory.Tower.emit req_e
+
+    handler (snd clr_chan) "clear" $ do
+      req_e <- Ivory.Tower.emitter req_chan 1
+      callback $ const $ do
+        arrayMap $ \(i :: Ix 1024) -> do
+          store (framebuffer ! i) 0
 
 
     coroutineHandler init_chan res_chan "ssd1306" $ do
-      req_e <- emitter req_chan 1
-      ready_e <- emitter (fst ready_chan) 1
+      req_e <- Ivory.Tower.emitter req_chan 1
+      ready_e <- Ivory.Tower.emitter (fst ready_chan) 1
       return $ CoroutineBody $ \ yield -> do
-        let em d = i2c_req addr d >>= emit req_e >> yield in do
+        let em d = i2c_req addr d >>= Ivory.Tower.emit req_e >> yield in do
           em DISPLAY_OFF
           -- TODO: FIXME: display goes wrong with this line
 --          em $ SET_DISPLAY_CLOCK_DIV 0x80
@@ -195,34 +239,34 @@ ssd1306Tower (BackpressureTransmit req_chan res_chan) init_chan addr = do
           em DEACTIVATE_SCROLL
 
           ssd_clear req_e addr yield
-          emitV ready_e true
+          Ivory.Tower.emitV ready_e true
 
           forever $ do
             blit_st <- deref blit_state
             when (blit_st) $ do
               store blit_state false
-              let em d = i2c_req addr d >>= emit req_e >> yield in do
+              let em d = i2c_req addr d >>= Ivory.Tower.emit req_e >> yield in do
                 em $ SET_MEMORY_MODE 0x1
                 em $ SET_PAGE_ADDRESS 0x0 7
                 em $ SET_COL_ADDRESS 0x0 127
 
                 arrayMap $ \(ixx :: Ix 1024) -> noBreak $ do
                   pix <- deref $ framebuffer ! ixx
-                  i2c_data_1 addr pix >>= emit req_e >> yield
+                  i2c_data_1 addr pix >>= Ivory.Tower.emit req_e >> yield
             yield
             return ()
           return ()
-  return (fst putpixel_chan, snd ready_chan, fst putch_chan, fst blit_chan)
+  return $ OledChannels (fst putpixel_chan) (snd ready_chan) (fst putch_chan) (fst blit_chan) (fst clr_chan)
 
 
 ssd_clear req_e addr yield = do
-  let em d = i2c_req addr d >>= emit req_e >> yield in do
+  let em d = i2c_req addr d >>= Ivory.Tower.emit req_e >> yield in do
     em $ SET_MEMORY_MODE 0x1
     em $ SET_PAGE_ADDRESS 0x0 7
     em $ SET_COL_ADDRESS 0x0 127
 
     arrayMap $ \(ixx :: Ix 1024) -> noBreak $ do
-      i2c_data_1 addr 0x00 >>= emit req_e >> yield
+      i2c_data_1 addr 0x00 >>= Ivory.Tower.emit req_e >> yield
 
     return ()
 

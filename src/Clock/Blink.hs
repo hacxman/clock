@@ -104,7 +104,8 @@ app tocc toleds toi2c touart = do
   monitor "dma" mon
 
 
-  (putpixel_ch, ssd_ready, putch_ch, blit_ch) <- ssd1306Tower i2cRequest i2cReady ssd1306_i2c_addr
+  --(putpixel_ch, ssd_ready, putch_ch, blit_ch, clr_ch) <- ssd1306Tower i2cRequest i2cReady ssd1306_i2c_addr
+  OledChannels putpixel_ch ssd_ready putch_ch blit_ch clr_ch <- ssd1306Tower i2cRequest i2cReady ssd1306_i2c_addr
   per <- period (Milliseconds 300)
   monitor "putpixelmon" $ do
     go <- stateInit "go_state" $ ival false
